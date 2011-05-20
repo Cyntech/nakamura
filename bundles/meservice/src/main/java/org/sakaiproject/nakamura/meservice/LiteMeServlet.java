@@ -30,7 +30,6 @@ import org.apache.sling.api.servlets.SlingSafeMethodsServlet;
 import org.apache.sling.api.wrappers.ValueMapDecorator;
 import org.apache.sling.commons.json.JSONException;
 import org.apache.solr.client.solrj.util.ClientUtils;
-import org.sakaiproject.nakamura.api.connections.ConnectionConstants;
 import org.sakaiproject.nakamura.api.connections.ConnectionManager;
 import org.sakaiproject.nakamura.api.doc.BindingType;
 import org.sakaiproject.nakamura.api.doc.ServiceBinding;
@@ -51,7 +50,6 @@ import org.sakaiproject.nakamura.api.messagebucket.MessageBucketException;
 import org.sakaiproject.nakamura.api.messagebucket.MessageBucketService;
 import org.sakaiproject.nakamura.api.profile.ProfileService;
 import org.sakaiproject.nakamura.api.search.solr.Query;
-import org.sakaiproject.nakamura.api.search.solr.Result;
 import org.sakaiproject.nakamura.api.search.solr.SolrSearchException;
 import org.sakaiproject.nakamura.api.search.solr.SolrSearchResultSet;
 import org.sakaiproject.nakamura.api.search.solr.SolrSearchServiceFactory;
@@ -67,6 +65,7 @@ import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -293,27 +292,17 @@ public class LiteMeServlet extends SlingSafeMethodsServlet {
     contacts.put(INVITED.toString().toLowerCase(), 0);
     contacts.put(PENDING.toString().toLowerCase(), 0);
     try {
-      // This could just use ConnectionUtils.getConnectionPathBase, but that util class is
-      // in the private package unfortunately.
-      String store = LitePersonalUtils.getHomePath(userID) + "/"
-          + ConnectionConstants.CONTACT_STORE_NAME;
-      store = ISO9075.encodePath(store);
-      String queryString = "path:" + ClientUtils.escapeQueryChars(store) + " AND resourceType:sakai/contact AND state:(ACCEPTED OR INVITED OR PENDING)";
-      Query query = new Query(queryString);
-      LOG.debug("Submitting Query {} ", query);
-      SolrSearchResultSet resultSet = searchServiceFactory.getSearchResultSet(
-          request, query, false);
-      Iterator<Result> resultIterator = resultSet.getResultSetIterator();
-      while (resultIterator.hasNext()) {
-        Result contact = resultIterator.next();
-        if (contact.getProperties().containsKey("state")) {
-          String state = (String) contact.getProperties().get("state").iterator().next();
-          int count = 0;
-          if (contacts.containsKey(state)) {
-            count = contacts.get(state);
-          }
-          contacts.put(state, count + 1);
-        }
+      List<String> acceptedConnections = connectionManager.getConnectedUsers(session, userID, ACCEPTED);
+      if (acceptedConnections != null) {
+        contacts.put(ACCEPTED.toString().toLowerCase(), acceptedConnections.size());
+      }
+      List<String> invitedConnections = connectionManager.getConnectedUsers(session, userID, INVITED);
+      if (invitedConnections != null) {
+        contacts.put(INVITED.toString().toLowerCase(), invitedConnections.size());
+      }
+      List<String> pendingConnections = connectionManager.getConnectedUsers(session, userID, PENDING);
+      if (pendingConnections != null) {
+        contacts.put(PENDING.toString().toLowerCase(), pendingConnections.size());
       }
     } finally {
       for (Entry<String, Integer> entry : contacts.entrySet()) {
@@ -362,11 +351,7 @@ public class LiteMeServlet extends SlingSafeMethodsServlet {
       LOG.debug("Submitting Query {} ", query);
       SolrSearchResultSet resultSet = searchServiceFactory.getSearchResultSet(
           request, query, false);
-      Iterator<Result> resultIterator = resultSet.getResultSetIterator();
-      while (resultIterator.hasNext()) {
-        count++;
-        resultIterator.next();
-      }
+      count = resultSet.getSize();
     } finally {
       writer.value(count);
     }
